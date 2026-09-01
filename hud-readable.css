@@ -1,0 +1,3 @@
+.live-copy small{font-size:9.2px;font-weight:650;line-height:1.18;opacity:1;letter-spacing:.005em}
+@media(max-width:430px){.live-copy small{font-size:8.8px;font-weight:650;line-height:1.17}.live-copy b{font-size:9.1px}}
+@media(max-width:340px){.live-copy small{font-size:8.1px}.live-copy b{font-size:8.4px}}
