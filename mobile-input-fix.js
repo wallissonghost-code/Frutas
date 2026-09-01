@@ -29,7 +29,7 @@ function syncPreviewSize(){
   if(!game||!preview)return;
   const state=game.getState?.()||{};
   const tiers=game.tiers||[];
-  const tier=tiers[Number(state.nextTier)||0];
+  const tier=tiers[Number(state.dropTier)||0];
   if(!tier)return;
   const diameter=Math.max(1,Number(tier.r)||1)*2;
   const px=diameter+'px';
@@ -59,7 +59,6 @@ canvas.addEventListener('pointermove',aim,{capture:true,passive:false});
 canvas.addEventListener('pointerup',release,{capture:true,passive:false});
 canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCapture?.(e.pointerId);},{capture:true,passive:false});
 
-// Mantém a prévia do topo com o mesmo diâmetro físico da fruta que será solta.
 const preview=document.getElementById('dropPreview');
 if(preview){
   const observer=new MutationObserver(syncPreviewSize);
