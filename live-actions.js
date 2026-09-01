@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const GAME_ID='frutas',VERSION='Beta 0.0.7',game=()=>window.FrutasGame,tracked=new Set();let miniScale=1,miniTimer=0,currentRules=[];
+const GAME_ID='frutas',VERSION='Beta 0.0.8',game=()=>window.FrutasGame,tracked=new Set();let miniScale=1,miniTimer=0,currentRules=[];
 const ACTIONS=[
 {id:'live_restart',label:'RECOMEÇAR',hint:'zera tudo',icon:'RST',description:'Zera frutas e pontos e reinicia a partida.',params:[]},
 {id:'remove_points',label:'- PONTOS',hint:'mantém a partida',icon:'-PTS',description:'Remove pontos sem alterar as frutas.',params:[{id:'amount',label:'PONTOS',type:'number',min:1,max:999999999,default:500}]},
