@@ -1,0 +1,37 @@
+name: QA avancado - 20 minutos
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  long-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias
+        run: npm install
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Rodar partida automatizada por 20 minutos
+        run: npm run test:long
+      - name: Guardar relatorio em falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frutas-qa-long-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
