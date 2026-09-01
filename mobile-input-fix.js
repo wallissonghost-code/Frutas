@@ -23,11 +23,26 @@ function physicsX(e){
   return local*(fieldWidth/Math.max(1,rect.width));
 }
 
+function syncPreviewSize(){
+  const game=window.FrutasGame;
+  const preview=document.getElementById('dropPreview');
+  if(!game||!preview)return;
+  const state=game.getState?.()||{};
+  const tiers=game.tiers||[];
+  const tier=tiers[Number(state.nextTier)||0];
+  if(!tier)return;
+  const diameter=Math.max(1,Number(tier.r)||1)*2;
+  const px=diameter+'px';
+  if(preview.style.width!==px)preview.style.width=px;
+  if(preview.style.height!==px)preview.style.height=px;
+}
+
 function aim(e){
   if(!window.FrutasGame)return;
   e.preventDefault();
   e.stopImmediatePropagation();
   window.FrutasGame.setDropX(physicsX(e));
+  syncPreviewSize();
 }
 function release(e){
   if(!window.FrutasGame)return;
@@ -35,10 +50,20 @@ function release(e){
   e.stopImmediatePropagation();
   const x=physicsX(e);
   window.FrutasGame.setDropX(x);
+  syncPreviewSize();
   window.FrutasGame.dropFruit(null,x);
+  requestAnimationFrame(syncPreviewSize);
 }
 
 canvas.addEventListener('pointermove',aim,{capture:true,passive:false});
 canvas.addEventListener('pointerup',release,{capture:true,passive:false});
 canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCapture?.(e.pointerId);},{capture:true,passive:false});
+
+// Mantém a prévia do topo com o mesmo diâmetro físico da fruta que será solta.
+const preview=document.getElementById('dropPreview');
+if(preview){
+  const observer=new MutationObserver(syncPreviewSize);
+  observer.observe(preview,{attributes:true,attributeFilter:['style']});
+}
+syncPreviewSize();
 })();
