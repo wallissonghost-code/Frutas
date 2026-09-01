@@ -9,36 +9,17 @@
   <meta http-equiv="Expires" content="0" />
   <title>Frutas · Beta 0.0.8</title>
   <script>
-    (()=>{
-      const fresh=Date.now();
-      const css=document.createElement('link');
-      css.rel='stylesheet';
-      css.href='./styles.css?fresh='+fresh;
-      document.head.appendChild(css);
-      try{
-        if('caches' in window)caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));
-        if('serviceWorker' in navigator)navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));
-      }catch{}
-      window.__FRUTAS_FRESH__=fresh;
-    })();
+    (()=>{const fresh=Date.now();const css=document.createElement('link');css.rel='stylesheet';css.href='./styles.css?fresh='+fresh;document.head.appendChild(css);try{if('caches'in window)caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));if('serviceWorker'in navigator)navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()))}catch{}window.__FRUTAS_FRESH__=fresh})();
   </script>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar">
-      <button class="icon-button" id="panelButton" type="button" aria-label="Conectar painel">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.95L14.37 2.8a.5.5 0 0 0-.5-.4h-3.84a.5.5 0 0 0-.5.4L9.17 5.3c-.58.24-1.12.56-1.63.95L5.15 5.3a.5.5 0 0 0-.61.22L2.62 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.05.31-.08.64-.08.96 0 .31.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .61.22l2.39-.96c.5.39 1.05.71 1.63.95l.36 2.5a.5.5 0 0 0 .5.4h3.84a.5.5 0 0 0 .5-.4l.36-2.5c.58-.24 1.13-.56 1.63-.95l2.39.96a.5.5 0 0 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.02-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>
-      </button>
+      <button class="icon-button" id="panelButton" type="button" aria-label="Conectar painel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.95L14.37 2.8a.5.5 0 0 0-.5-.4h-3.84a.5.5 0 0 0-.5.4L9.17 5.3c-.58.24-1.12.56-1.63.95L5.15 5.3a.5.5 0 0 0-.61.22L2.62 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.05.31-.08.64-.08.96 0 .31.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .61.22l2.39-.96c.5.39 1.05.71 1.63.95l.36 2.5a.5.5 0 0 0 .5.4h3.84a.5.5 0 0 0 .5-.4l.36-2.5c.58-.24 1.13-.56 1.63-.95l2.39.96a.5.5 0 0 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.02-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg></button>
       <div class="score-card"><span>PONTOS</span><strong id="score">0</strong></div>
       <div class="next-card"><div class="next-fruit fruit-chip" id="nextFruit" aria-label="Próxima fruta"></div><span>PRÓXIMA</span></div>
     </header>
-    <section class="game-wrap" aria-label="Jogo de frutas">
-      <div class="danger-label">LIMITE</div>
-      <canvas id="gameCanvas"></canvas>
-      <div class="aim-line" id="aimLine"></div>
-      <div class="drop-preview fruit-chip" id="dropPreview" aria-hidden="true"></div>
-      <div class="game-message" id="gameMessage" hidden></div>
-    </section>
+    <section class="game-wrap" aria-label="Jogo de frutas"><div class="danger-label">LIMITE</div><canvas id="gameCanvas"></canvas><div class="aim-line" id="aimLine"></div><div class="drop-preview fruit-chip" id="dropPreview" aria-hidden="true"></div><div class="game-message" id="gameMessage" hidden></div></section>
     <section class="progression" aria-label="Evolução das frutas"><div class="progression-track" id="progressionTrack"></div><small>Junte 2 frutas iguais para evoluir</small></section>
     <footer class="statusbar"><span><i id="statusDot"></i><b id="panelStatus">Painel offline</b></span><span>Beta 0.0.8</span></footer>
   </main>
@@ -46,22 +27,7 @@
   <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/wallissonghost-code/projeto-daniel@main/sdk/liveplus-game-sdk-v1.js"></script>
   <script>
-    (()=>{
-      const fresh=window.__FRUTAS_FRESH__||Date.now();
-      const game=document.createElement('script');
-      game.src='./game.js?fresh='+fresh;
-      game.onload=()=>{
-        const fix=document.createElement('script');
-        fix.src='./mobile-input-fix.js?fresh='+fresh;
-        fix.onload=()=>{
-          const live=document.createElement('script');
-          live.src='./live-actions.js?fresh='+fresh;
-          document.body.appendChild(live);
-        };
-        document.body.appendChild(fix);
-      };
-      document.body.appendChild(game);
-    })();
+    (()=>{const fresh=window.__FRUTAS_FRESH__||Date.now();const game=document.createElement('script');game.src='https://raw.githubusercontent.com/wallissonghost-code/Frutas/f5739b5faca1adb6eca85246ab922047311b1a0c/game.js?fresh='+fresh;game.onload=()=>{if(window.FrutasGame?.manifest)window.FrutasGame.manifest.actions=[];const fix=document.createElement('script');fix.src='./mobile-input-fix.js?fresh='+fresh;fix.onload=()=>{const live=document.createElement('script');live.src='./live-actions.js?fresh='+fresh;document.body.appendChild(live)};document.body.appendChild(fix)};document.body.appendChild(game)})();
   </script>
 </body>
 </html>
