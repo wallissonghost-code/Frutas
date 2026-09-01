@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const {Engine,World,Bodies,Body,Events}=Matter;
-const VERSION='Beta 0.0.3';
+const VERSION='Beta 0.0.5';
 const GAME_ID='frutas';
 const FIXED_STEP=1000/60;
 const MAX_SUBSTEPS=2;
@@ -45,7 +45,7 @@ function rebuildSprites(){fruitSprites.length=0;for(const t of TIERS)fruitSprite
 function setChip(el,tier){if(!el)return;const t=TIERS[tier];el.textContent='';el.style.setProperty('--fruit-color',t.color);el.style.setProperty('--fruit-dark',shade(t.color,-30));el.setAttribute('aria-label',t.name)}
 function clampFruitToField(body,hard=false){if(!body||body.label!=='fruit')return;const r=TIERS[body.fruitTier]?.r||16;let x=body.position.x,y=body.position.y,changed=false;if(x<r){x=r;changed=true}else if(x>width-r){x=width-r;changed=true}if(y>height-r){y=height-r;changed=true}if(changed){Body.setPosition(body,{x,y});if(hard){Body.setVelocity(body,{x:clamp(body.velocity.x,-2.5,2.5),y:Math.min(0,body.velocity.y)*.15})}else{Body.setVelocity(body,{x:body.position.x<=r?Math.abs(body.velocity.x)*.18:body.position.x>=width-r?-Math.abs(body.velocity.x)*.18:body.velocity.x,y:y>=height-r?-Math.abs(body.velocity.y)*.08:body.velocity.y})}}}
 function enforcePlayfield(){for(let i=0;i<fruits.length;i++){const b=fruits[i],r=TIERS[b.fruitTier].r;if(b.position.x<r-2||b.position.x>width-r+2||b.position.y>height-r+3)clampFruitToField(b,true)}}
-function resize(){const rect=wrap.getBoundingClientRect(),mobile=matchMedia('(pointer:coarse)').matches,viewport=document.documentElement.clientWidth||window.innerWidth||rect.width;currentDpr=Math.min(mobile?1.35:1.6,window.devicePixelRatio||1);width=Math.max(280,Math.round(Math.min(rect.width,Math.max(280,viewport-24))));height=Math.max(360,Math.round(rect.height));canvas.width=Math.max(1,Math.round(width*currentDpr));canvas.height=Math.max(1,Math.round(height*currentDpr));canvas.style.width=width+'px';canvas.style.height=height+'px';rebuildWalls();for(let i=0;i<fruits.length;i++)clampFruitToField(fruits[i],true);dropX=clamp(dropX,30,width-30);updateAim()}
+function resize(){const mobile=matchMedia('(pointer:coarse)').matches;currentDpr=Math.min(mobile?1.35:1.6,window.devicePixelRatio||1);width=Math.max(280,Math.round(wrap.clientWidth));height=Math.max(360,Math.round(wrap.clientHeight));canvas.style.width='100%';canvas.style.height='100%';canvas.width=Math.max(1,Math.round(width*currentDpr));canvas.height=Math.max(1,Math.round(height*currentDpr));ctx.setTransform(currentDpr,0,0,currentDpr,0,0);rebuildWalls();for(let i=0;i<fruits.length;i++)clampFruitToField(fruits[i],true);dropX=clamp(dropX,30,width-30);updateAim()}
 function rebuildWalls(){walls.forEach(w=>World.remove(engine.world,w));const thick=140,sideHeight=height+thick*2;walls=[Bodies.rectangle(-thick/2,height/2,thick,sideHeight,{isStatic:true,label:'wall-left',friction:.25,restitution:0}),Bodies.rectangle(width+thick/2,height/2,thick,sideHeight,{isStatic:true,label:'wall-right',friction:.25,restitution:0}),Bodies.rectangle(width/2,height+thick/2,width+thick*2,thick,{isStatic:true,label:'floor',friction:.35,restitution:0})];World.add(engine.world,walls)}
 function makeFruit(tier,x,y,opts={}){tier=clamp(Number(tier)||0,0,TIERS.length-1);const t=TIERS[tier],body=Bodies.circle(clamp(x,t.r,width-t.r),y,t.r,{label:'fruit',restitution:.07,friction:.19,frictionStatic:.55,frictionAir:.007,density:t.density,slop:.02,sleepThreshold:45});body.fruitTier=tier;body.spawnedAt=Date.now();body.mergeLock=false;if(opts.vx||opts.vy)Body.setVelocity(body,{x:opts.vx||0,y:opts.vy||0});fruits.push(body);World.add(engine.world,body);return body}
 function removeFruit(body){const i=fruits.indexOf(body);if(i>=0)fruits.splice(i,1);World.remove(engine.world,body);merging.delete(body.id)}
@@ -91,5 +91,5 @@ rebuildSprites();buildProgression();updateNextUI();resize();
 let resizeTimer=0;addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(resize,90)},{passive:true});
 document.addEventListener('visibilitychange',()=>{last=performance.now();accumulator=0});
 requestAnimationFrame(tick);
-window.FrutasGame={version:VERSION,gameId:GAME_ID,manifest,tiers:TIERS.map(t=>({...t})),executeCommand,dropFruit:(tier,x)=>drop(tier,x??dropX,'api'),setDropX:x=>{dropX=Number(x)||dropX;updateAim()},reset:resetGame,getState:stateSnapshot,connectPanel};
+window.FrutasGame={version:VERSION,gameId:GAME_ID,manifest,tiers:TIERS.map(t=>({...t})),executeCommand,dropFruit:(tier,x)=>drop(tier,x??dropX,'api'),setDropX:x=>{dropX=Number(x)||dropX;updateAim()},getFieldMetrics:()=>({width,height,dpr:currentDpr,canvasCssWidth:canvas.getBoundingClientRect().width}),reset:resetGame,getState:stateSnapshot,connectPanel};
 })();
