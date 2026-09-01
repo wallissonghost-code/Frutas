@@ -1,130 +1,22 @@
 (()=>{'use strict';
-const GAME_ID='frutas';
-const VERSION='Beta 0.0.6';
-const game=()=>window.FrutasGame;
-const tracked=new Set();
-let miniScale=1,miniTimer=0;
-
-const style=document.createElement('style');
-style.textContent=`
-.live-actions{background:#5c3d30;border-top:2px solid rgba(0,0,0,.18);padding:7px 10px 8px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;min-width:0}
-.live-action-card{min-width:0;height:48px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#744b39;color:#fff5df;padding:5px 6px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;line-height:1.05;box-shadow:inset 0 -2px rgba(0,0,0,.12)}
-.live-action-card b{font-size:10px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.live-action-card small{font-size:8px;opacity:.72;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.live-actions-title{grid-column:1/-1;font-size:9px;font-weight:900;letter-spacing:.12em;color:#f5ddb8;text-align:center;margin-bottom:-1px}
-@media(max-height:760px){.live-action-card{height:42px}.live-actions{padding-top:5px;padding-bottom:5px;gap:4px}.live-actions-title{display:none}}
-`;
-document.head.appendChild(style);
-
-function addPanel(){
-  const footer=document.querySelector('.statusbar');
-  if(!footer||document.querySelector('.live-actions'))return;
-  const box=document.createElement('section');
-  box.className='live-actions';
-  box.setAttribute('aria-label','Interações da live');
-  box.innerHTML=`<div class="live-actions-title">INTERAÇÕES DA LIVE</div>
-    <div class="live-action-card"><b>RECOMEÇAR</b><small>zera tudo</small></div>
-    <div class="live-action-card"><b>- PONTOS</b><small>mantém a partida</small></div>
-    <div class="live-action-card"><b>FRUTA GIGANTE</b><small>ocupa espaço</small></div>
-    <div class="live-action-card"><b>CHUVA</b><small>várias frutas</small></div>
-    <div class="live-action-card"><b>2ª CHANCE</b><small>limpa, mantém pontos</small></div>
-    <div class="live-action-card"><b>MINI FRUTAS</b><small>tamanho temporário</small></div>`;
-  footer.before(box);
-}
-addPanel();
-
-const extraActions=[
- {id:'live_restart',label:'Recomeçar',icon:'RST',description:'Zera frutas e pontos e reinicia a partida.',params:[]},
- {id:'remove_points',label:'Remover pontos',icon:'-PTS',description:'Remove pontos sem alterar as frutas.',params:[{id:'amount',label:'PONTOS',type:'number',min:1,max:999999999,default:500}]},
- {id:'giant_fruit',label:'Fruta gigante',icon:'BIG',description:'Solta uma fruta ampliada. Tamanho definido pelo painel.',params:[{id:'tier',label:'NÍVEL',type:'number',min:0,max:9,default:4},{id:'scale',label:'ESCALA',type:'number',min:1.1,max:3,default:1.8}]},
- {id:'fruit_rain',label:'Chuva de frutas',icon:'RAIN',description:'Solta várias frutas em sequência.',params:[{id:'count',label:'QUANTIDADE',type:'number',min:2,max:30,default:8},{id:'maxTier',label:'NÍVEL MÁX.',type:'number',min:0,max:4,default:2}]},
- {id:'second_chance',label:'Segunda chance',icon:'SAVE',description:'Limpa a caixa mantendo a pontuação atual.',params:[]},
- {id:'mini_fruits',label:'Mini frutas',icon:'MINI',description:'Reduz fisicamente todas as frutas por tempo configurável.',params:[{id:'percent',label:'TAMANHO %',type:'number',min:20,max:90,default:50},{id:'duration',label:'DURAÇÃO (s)',type:'number',min:1,max:300,default:20}]}
-];
-
-function patchMatterTracking(){
-  if(!window.Matter?.World||window.__FRUTAS_TRACK_PATCHED__)return;
-  window.__FRUTAS_TRACK_PATCHED__=true;
-  const W=window.Matter.World,origAdd=W.add.bind(W),origRemove=W.remove.bind(W);
-  W.add=function(world,obj){
-    const result=origAdd(world,obj);
-    const list=Array.isArray(obj)?obj:[obj];
-    for(const body of list){if(body?.label==='fruit'){tracked.add(body);body.__liveBaseScale=body.__liveBaseScale||1;if(miniScale!==1)window.Matter.Body.scale(body,miniScale,miniScale);}}
-    return result;
-  };
-  W.remove=function(world,obj,...rest){tracked.delete(obj);return origRemove(world,obj,...rest)};
-}
-patchMatterTracking();
-
-function patchRendering(){
-  const canvas=document.getElementById('gameCanvas');
-  const ctx=canvas?.getContext('2d');
-  if(!ctx||ctx.__liveDrawPatched)return;
-  ctx.__liveDrawPatched=true;
-  const orig=ctx.drawImage.bind(ctx);
-  ctx.drawImage=function(...args){
-    if(args.length===5&&tracked.size){
-      try{
-        const tr=ctx.getTransform(),x=tr.a?tr.e/tr.a:tr.e,y=tr.d?tr.f/tr.d:tr.f;
-        let body=null,best=Infinity;
-        for(const b of tracked){const d=Math.abs(b.position.x-x)+Math.abs(b.position.y-y);if(d<best){best=d;body=b}}
-        if(body&&best<4){const s=(body.__liveBaseScale||1)*miniScale;if(s!==1){args[1]*=s;args[2]*=s;args[3]*=s;args[4]*=s;}}
-      }catch{}
-    }
-    return orig(...args);
-  };
-}
-patchRendering();
-
-function setMini(scale,durationMs){
-  scale=Math.max(.2,Math.min(.9,Number(scale)||.5));
-  const ratio=scale/miniScale;
-  for(const b of tracked){try{window.Matter.Body.scale(b,ratio,ratio)}catch{}}
-  miniScale=scale;
-  document.body.classList.toggle('mini-mode',miniScale!==1);
-  clearTimeout(miniTimer);
-  if(durationMs>0)miniTimer=setTimeout(()=>setMini(1,0),durationMs);
-}
-
-function lastTrackedFruit(){let last=null,max=-Infinity;for(const b of tracked){const t=Number(b.spawnedAt)||0;if(t>max){max=t;last=b}}return last}
-
-function executeCustom(data={},session){
-  const action=String(data.action||data.command||'');
-  const p=data.params&&typeof data.params==='object'?data.params:{};
-  const api=game(); if(!api)return false;
-  switch(action){
-    case'live_restart': api.reset(); break;
-    case'remove_points':{const s=api.getState?.()||{};api.executeCommand({action:'set_score',params:{amount:Math.max(0,(Number(s.score)||0)-Math.max(0,Number(p.amount)||0))}});break;}
-    case'giant_fruit':{const m=api.getFieldMetrics?.()||{};const tier=Math.max(0,Math.min(9,Number(p.tier)||4));const scale=Math.max(1.1,Math.min(3,Number(p.scale)||1.8));const x=Math.max(20,Math.min((Number(m.width)||360)-20,(Number(m.width)||360)*(.25+Math.random()*.5)));if(api.dropFruit(tier,x)){setTimeout(()=>{const b=lastTrackedFruit();if(b){window.Matter.Body.scale(b,scale,scale);b.__liveBaseScale=(b.__liveBaseScale||1)*scale;}},0);}break;}
-    case'fruit_rain':{const count=Math.max(2,Math.min(30,Number(p.count)||8)),maxTier=Math.max(0,Math.min(4,Number(p.maxTier)||2));let i=0;const timer=setInterval(()=>{if(i++>=count){clearInterval(timer);return}const m=api.getFieldMetrics?.()||{},w=Number(m.width)||360,tier=Math.floor(Math.random()*(maxTier+1));api.dropFruit(tier,30+Math.random()*Math.max(1,w-60));},330);break;}
-    case'second_chance':{const s=api.getState?.()||{},pts=Number(s.score)||0;api.reset();api.executeCommand({action:'set_score',params:{amount:pts}});break;}
-    case'mini_fruits':{const percent=Math.max(20,Math.min(90,Number(p.percent)||50)),duration=Math.max(1,Math.min(300,Number(p.duration)||20));setMini(percent/100,duration*1000);break;}
-    default:return false;
-  }
-  try{session?.sendState?.({scope:'command',gameId:GAME_ID,commandStatus:'executed',action,version:VERSION})}catch{}
-  return true;
-}
-
-function patchSdk(){
-  const SDK=window.LivePlusGameSDK;if(!SDK?.Session||SDK.__frutasLivePatched)return;
-  SDK.__frutasLivePatched=true;
-  const Original=SDK.Session;
-  const proto=Original.prototype;
-  const origAdd=proto.addEventListener;
-  if(origAdd)proto.addEventListener=function(type,listener,...rest){
-    if(type==='command'&&typeof listener==='function'){
-      const self=this;
-      return origAdd.call(this,type,function(e){if(executeCustom(e?.detail||{},self))return;return listener.call(this,e)},...rest);
-    }
-    return origAdd.call(this,type,listener,...rest);
-  };
-  SDK.Session=new Proxy(Original,{construct(Target,args,newTarget){
-    const opts={...(args?.[0]||{})};
-    if(opts.manifest&&opts.manifest.gameId===GAME_ID){opts.manifest={...opts.manifest,version:VERSION,actions:[...(opts.manifest.actions||[]).filter(a=>!extraActions.some(x=>x.id===a.id)),...extraActions]};args=[opts,...(args||[]).slice(1)];}
-    return Reflect.construct(Target,args,newTarget===proxy?Target:newTarget);
-  }});
-  const proxy=SDK.Session;
-}
-patchSdk();
-
-window.FrutasLiveActions={version:VERSION,actions:extraActions,execute:executeCustom,getMiniScale:()=>miniScale};
+const GAME_ID='frutas',VERSION='Beta 0.0.7',game=()=>window.FrutasGame,tracked=new Set();let miniScale=1,miniTimer=0,currentRules=[];
+const ACTIONS=[
+{id:'live_restart',label:'RECOMEÇAR',hint:'zera tudo',icon:'RST',description:'Zera frutas e pontos e reinicia a partida.',params:[]},
+{id:'remove_points',label:'- PONTOS',hint:'mantém a partida',icon:'-PTS',description:'Remove pontos sem alterar as frutas.',params:[{id:'amount',label:'PONTOS',type:'number',min:1,max:999999999,default:500}]},
+{id:'giant_fruit',label:'FRUTA GIGANTE',hint:'ocupa espaço',icon:'BIG',description:'Solta uma fruta ampliada.',params:[{id:'tier',label:'NÍVEL',type:'number',min:0,max:9,default:4},{id:'scale',label:'ESCALA',type:'number',min:1.1,max:3,default:1.8}]},
+{id:'fruit_rain',label:'CHUVA',hint:'várias frutas',icon:'RAIN',description:'Solta várias frutas em sequência.',params:[{id:'count',label:'QUANTIDADE',type:'number',min:2,max:30,default:8},{id:'maxTier',label:'NÍVEL MÁX.',type:'number',min:0,max:4,default:2}]},
+{id:'second_chance',label:'2ª CHANCE',hint:'limpa, mantém pontos',icon:'SAVE',description:'Limpa a caixa mantendo a pontuação.',params:[]},
+{id:'mini_fruits',label:'MINI FRUTAS',hint:'tamanho temporário',icon:'MINI',description:'Reduz fisicamente todas as frutas.',params:[{id:'percent',label:'TAMANHO %',type:'number',min:20,max:90,default:50},{id:'duration',label:'DURAÇÃO (s)',type:'number',min:1,max:300,default:20}]}
+],extraActions=ACTIONS.map(({hint,...a})=>a),byId=new Map(ACTIONS.map(a=>[a.id,a]));
+const style=document.createElement('style');style.textContent=`.live-actions{background:linear-gradient(#5b3b2f,#4b3027);border-top:2px solid #0003;padding:7px 9px 9px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.live-actions-title{grid-column:1/-1;text-align:center;font-size:9px;font-weight:900;letter-spacing:.12em;color:#f5ddb8}.live-action-card{height:66px;min-width:0;border:1px solid #ffffff22;border-radius:12px;background:linear-gradient(#7b513f,#684433);padding:5px;display:grid;grid-template-columns:38px minmax(0,1fr);gap:5px;align-items:center;color:#fff5df;overflow:hidden}.live-action-card.empty{opacity:.55}.live-gift{width:38px;height:38px;border-radius:10px;background:#28170f44;display:grid;place-items:center;overflow:hidden}.live-gift img{width:35px;height:35px;object-fit:contain;display:block}.live-gift span{font-size:7px;font-weight:900}.live-copy{min-width:0;line-height:1.05}.live-copy b,.live-copy small,.live-copy em{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}.live-copy b{font-size:8.5px;white-space:normal}.live-copy small{font-size:6.8px;white-space:nowrap;margin-top:4px;opacity:.75}.live-copy em{font-style:normal;font-size:6.8px;white-space:nowrap;margin-top:3px;color:#ffe4a8;font-weight:900}@media(max-width:390px){.live-actions{gap:5px;padding-left:7px;padding-right:7px}.live-action-card{height:62px;grid-template-columns:34px minmax(0,1fr);gap:4px}.live-gift{width:34px;height:34px}.live-gift img{width:31px;height:31px}.live-copy b{font-size:8px}}`;document.head.appendChild(style);
+function first(o,ks){for(const k of ks){const v=o?.[k];if(v!==undefined&&v!==null&&v!=='')return v}return''}function actionId(r){return String(first(r,['actionId','action','command'])||'')}function params(r){return r?.params||r?.actionParams||r?.effectParams||{}}function value(r){const g=r?.gift||{};return Number(first(r,['diamondCount','giftValue','value','diamonds','coins','coinValue'])||first(g,['diamondCount','value','diamonds','coins'])||0)}function giftName(r){const g=r?.gift||{};return String(first(r,['giftName','triggerName'])||first(g,['name','giftName','title'])||'Presente')}function giftIcon(r){const g=r?.gift||{};return String(first(r,['giftIcon','giftImage','icon','image'])||first(g,['icon','image','iconUrl','imageUrl','pictureUrl'])||'')}function effect(a,p){if(a==='remove_points')return'-'+Math.max(0,Number(p.amount)||0).toLocaleString('pt-BR')+' PONTOS';if(a==='fruit_rain')return'CHUVA ×'+Math.max(2,Number(p.count)||8);if(a==='mini_fruits')return'MINI '+Math.max(20,Number(p.percent)||50)+'%';if(a==='giant_fruit')return'FRUTA GIGANTE';if(a==='second_chance')return'2ª CHANCE';if(a==='live_restart')return'RECOMEÇAR';return byId.get(a)?.label||a}
+function addPanel(){const footer=document.querySelector('.statusbar');if(!footer||document.querySelector('.live-actions'))return;const box=document.createElement('section');box.className='live-actions';footer.before(box);render([]);requestAnimationFrame(()=>game()?.forceResize?.())}
+function render(rules=currentRules){currentRules=Array.isArray(rules)?rules:[];const box=document.querySelector('.live-actions');if(!box)return;const map=new Map();for(const r of currentRules){const id=actionId(r);if(byId.has(id)&&!map.has(id))map.set(id,r)}const ordered=[...ACTIONS].sort((a,b)=>{const ra=map.get(a.id),rb=map.get(b.id);if(ra&&!rb)return-1;if(!ra&&rb)return 1;if(ra&&rb)return value(ra)-value(rb);return ACTIONS.indexOf(a)-ACTIONS.indexOf(b)});box.innerHTML='<div class="live-actions-title">INTERAÇÕES DA LIVE · ORDEM POR VALOR</div>'+ordered.map(a=>{const r=map.get(a.id),p=r?params(r):{},img=r?giftIcon(r):'',v=r?value(r):0;return`<div class="live-action-card ${r?'':'empty'}"><div class="live-gift">${img?`<img src="${img}" alt="">`:'<span>SEM REGRA</span>'}</div><div class="live-copy"><b>${r?effect(a.id,p):a.label}</b><small>${r?giftName(r):a.hint}</small>${r?`<em>${v>0?v.toLocaleString('pt-BR')+' moedas':'valor do painel'}</em>`:''}</div></div>`}).join('');requestAnimationFrame(()=>game()?.forceResize?.())}
+addPanel();window.addEventListener('frutas:rules_sync',e=>render(e.detail?.rules||[]));
+function track(){for(const b of game()?.getBodies?.()||[]){tracked.add(b);b.__liveBaseScale=Number(b.__liveBaseScale)||1;b.__liveScale=Number(b.__liveScale)||1}}
+function patchMatter(){if(!window.Matter?.World||window.__FRUTAS_TRACK_PATCHED__)return;window.__FRUTAS_TRACK_PATCHED__=true;track();const W=window.Matter.World,add=W.add.bind(W),remove=W.remove.bind(W);W.add=function(world,obj){const out=add(world,obj);for(const b of(Array.isArray(obj)?obj:[obj]))if(b?.label==='fruit'){tracked.add(b);b.__liveBaseScale=Number(b.__liveBaseScale)||1;b.__liveScale=Number(b.__liveScale)||1;if(miniScale!==1){Matter.Body.scale(b,miniScale,miniScale);b.__liveScale*=miniScale}}return out};W.remove=function(world,obj,...rest){tracked.delete(obj);return remove(world,obj,...rest)}}patchMatter();
+function scaleTo(b,target){const now=Math.max(.05,Number(b.__liveScale)||1),next=Math.max(.05,target);Matter.Body.scale(b,next/now,next/now);b.__liveScale=next}function setMini(scale,ms){miniScale=Math.max(.2,Math.min(1,Number(scale)||.5));track();for(const b of tracked)scaleTo(b,(Number(b.__liveBaseScale)||1)*miniScale);clearTimeout(miniTimer);if(ms>0)miniTimer=setTimeout(()=>setMini(1,0),ms)}function latest(){track();let out=null,t=-1;for(const b of tracked)if(Number(b.spawnedAt)>t){t=Number(b.spawnedAt);out=b}return out}
+function executeCustom(data={},session){const action=String(data.action||data.command||''),p=data.params&&typeof data.params==='object'?data.params:{},api=game();if(!api)return false;switch(action){case'live_restart':api.reset();break;case'remove_points':{const s=api.getState?.()||{};api.executeCommand({action:'set_score',params:{amount:Math.max(0,(Number(s.score)||0)-Math.max(0,Number(p.amount)||0))}});break}case'giant_fruit':{const m=api.getFieldMetrics?.()||{},tier=Math.max(0,Math.min(9,Number(p.tier)||4)),scale=Math.max(1.1,Math.min(3,Number(p.scale)||1.8)),w=Number(m.width)||360;if(api.dropFruit(tier,w*(.25+Math.random()*.5)))setTimeout(()=>{const b=latest();if(b){b.__liveBaseScale=scale;scaleTo(b,scale*miniScale)}},0);break}case'fruit_rain':{const count=Math.max(2,Math.min(30,Number(p.count)||8)),maxTier=Math.max(0,Math.min(4,Number(p.maxTier)||2));let i=0;const tm=setInterval(()=>{if(i++>=count)return clearInterval(tm);const m=api.getFieldMetrics?.()||{},w=Number(m.width)||360;api.dropFruit(Math.floor(Math.random()*(maxTier+1)),30+Math.random()*Math.max(1,w-60))},330);break}case'second_chance':{const pts=Number(api.getState?.().score)||0;api.reset();api.executeCommand({action:'set_score',params:{amount:pts}});break}case'mini_fruits':setMini(Math.max(20,Math.min(90,Number(p.percent)||50))/100,Math.max(1,Math.min(300,Number(p.duration)||20))*1000);break;default:return false}try{session?.sendState?.({scope:'command',gameId:GAME_ID,commandStatus:'executed',action,version:VERSION})}catch{}return true}
+function patchSdk(){const SDK=window.LivePlusGameSDK;if(!SDK?.Session||SDK.__frutasLivePatched)return;SDK.__frutasLivePatched=true;const Original=SDK.Session,proto=Original.prototype,orig=proto.addEventListener;if(orig)proto.addEventListener=function(type,listener,...rest){if(type==='command'&&typeof listener==='function'){const self=this;return orig.call(this,type,function(e){if(executeCustom(e?.detail||{},self))return;return listener.call(this,e)},...rest)}return orig.call(this,type,listener,...rest)};const Wrapped=new Proxy(Original,{construct(Target,args,newTarget){const opts={...(args?.[0]||{})};if(opts.manifest?.gameId===GAME_ID){opts.manifest={...opts.manifest,version:VERSION,actions:[...(opts.manifest.actions||[]),...extraActions]};args=[opts,...(args||[]).slice(1)]}return Reflect.construct(Target,args,newTarget)}});SDK.Session=Wrapped}patchSdk();
+window.FrutasLiveActions={version:VERSION,actions:extraActions,execute:executeCustom,syncRules:render,getMiniScale:()=>miniScale};
 })();
