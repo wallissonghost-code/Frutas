@@ -1,9 +1,11 @@
 (()=>{'use strict';
 const {Engine,World,Bodies,Body,Events}=Matter;
-const VERSION='Beta 0.0.7';
+const VERSION='Beta 0.0.8';
 const GAME_ID='frutas';
 const FIXED_STEP=1000/60;
 const MAX_SUBSTEPS=2;
+const DANGER_Y=84;
+const DANGER_HOLD_MS=5000;
 const TIERS=[
 {id:'roxa',name:'Roxa',color:'#6f4ba8',r:17,score:0,density:.0011},
 {id:'vermelha',name:'Vermelha',color:'#d84f55',r:22,score:10,density:.0013},
@@ -18,12 +20,12 @@ const TIERS=[
 ];
 const SPAWN_POOL=[0,0,0,1,1,1,2,2,3,4];
 const $=id=>document.getElementById(id),canvas=$('gameCanvas'),ctx=canvas.getContext('2d',{alpha:true}),wrap=canvas.parentElement;
-const engine=Engine.create({enableSleeping:true});
-engine.gravity.y=1.02;
-engine.positionIterations=6;
-engine.velocityIterations=5;
+const engine=Engine.create({enableSleeping:false});
+engine.gravity.y=1.08;
+engine.positionIterations=7;
+engine.velocityIterations=6;
 engine.constraintIterations=1;
-let walls=[],fruits=[],merging=new Set(),score=0,dropTier=randomSpawn(),nextTier=randomSpawn(),dropX=160,canDrop=true,gameOver=false,paused=false,dangerSince=0,session=null,panelRules=[];
+let walls=[],fruits=[],merging=new Set(),score=0,dropTier=randomSpawn(),nextTier=randomSpawn(),dropX=160,canDrop=true,gameOver=false,paused=false,dangerSince=0,dangerBodyId=null,session=null,panelRules=[];
 let width=360,height=560,last=performance.now(),accumulator=0,lastDangerCheck=0,currentDpr=1;
 const fruitSprites=[];
 const tierOptions=TIERS.slice(0,7).map((t,i)=>({value:String(i),label:t.name}));
@@ -44,12 +46,12 @@ function makeSprite(t){const pad=Math.max(4,Math.ceil(t.r*.08)),size=(t.r+pad)*2
 function rebuildSprites(){fruitSprites.length=0;for(const t of TIERS)fruitSprites.push(makeSprite(t))}
 function setChip(el,tier){if(!el)return;const t=TIERS[tier];el.textContent='';el.style.setProperty('--fruit-color',t.color);el.style.setProperty('--fruit-dark',shade(t.color,-30));el.setAttribute('aria-label',t.name)}
 function bodyRadius(body){const base=TIERS[body?.fruitTier]?.r||16;return base*(Number(body?.__liveScale)||1)}
-function clampFruitToField(body,hard=false){if(!body||body.label!=='fruit')return;const r=bodyRadius(body);let x=body.position.x,y=body.position.y,changed=false;if(x<r){x=r;changed=true}else if(x>width-r){x=width-r;changed=true}if(y>height-r){y=height-r;changed=true}if(changed){Body.setPosition(body,{x,y});if(hard){Body.setVelocity(body,{x:clamp(body.velocity.x,-2.5,2.5),y:Math.min(0,body.velocity.y)*.15})}else{Body.setVelocity(body,{x:body.position.x<=r?Math.abs(body.velocity.x)*.18:body.position.x>=width-r?-Math.abs(body.velocity.x)*.18:body.velocity.x,y:y>=height-r?-Math.abs(body.velocity.y)*.08:body.velocity.y})}}}
+function clampFruitToField(body,hard=false){if(!body||body.label!=='fruit')return;const r=bodyRadius(body);let x=body.position.x,y=body.position.y,changed=false;if(x<r){x=r;changed=true}else if(x>width-r){x=width-r;changed=true}if(y>height-r){y=height-r;changed=true}if(changed){Body.setPosition(body,{x,y});if(hard){Body.setVelocity(body,{x:clamp(body.velocity.x,-2.5,2.5),y:Math.min(0,body.velocity.y)*.12})}else{Body.setVelocity(body,{x:body.position.x<=r?Math.abs(body.velocity.x)*.12:body.position.x>=width-r?-Math.abs(body.velocity.x)*.12:body.velocity.x,y:y>=height-r?-Math.abs(body.velocity.y)*.06:body.velocity.y})}}}
 function enforcePlayfield(){for(let i=0;i<fruits.length;i++){const b=fruits[i],r=bodyRadius(b);if(b.position.x<r-2||b.position.x>width-r+2||b.position.y>height-r+3)clampFruitToField(b,true)}}
 function resize(){const mobile=matchMedia('(pointer:coarse)').matches;currentDpr=Math.min(mobile?1.35:1.6,window.devicePixelRatio||1);const nextWidth=Math.max(280,Math.round(wrap.clientWidth));const nextHeight=Math.max(220,Math.round(wrap.clientHeight));if(nextWidth===width&&nextHeight===height&&canvas.width)return;const oldW=width,oldH=height;width=nextWidth;height=nextHeight;canvas.style.width='100%';canvas.style.height='100%';canvas.width=Math.max(1,Math.round(width*currentDpr));canvas.height=Math.max(1,Math.round(height*currentDpr));ctx.setTransform(currentDpr,0,0,currentDpr,0,0);rebuildWalls();if(oldW>0&&oldH>0){const sx=width/oldW,sy=height/oldH;for(const b of fruits){Body.setPosition(b,{x:b.position.x*sx,y:b.position.y*sy});clampFruitToField(b,true)}}dropX=clamp(dropX,30,width-30);updateAim()}
-function rebuildWalls(){walls.forEach(w=>World.remove(engine.world,w));const thick=140,sideHeight=height+thick*2;walls=[Bodies.rectangle(-thick/2,height/2,thick,sideHeight,{isStatic:true,label:'wall-left',friction:.25,restitution:0}),Bodies.rectangle(width+thick/2,height/2,thick,sideHeight,{isStatic:true,label:'wall-right',friction:.25,restitution:0}),Bodies.rectangle(width/2,height+thick/2,width+thick*2,thick,{isStatic:true,label:'floor',friction:.35,restitution:0})];World.add(engine.world,walls)}
-function makeFruit(tier,x,y,opts={}){tier=clamp(Number(tier)||0,0,TIERS.length-1);const t=TIERS[tier],body=Bodies.circle(clamp(x,t.r,width-t.r),y,t.r,{label:'fruit',restitution:.05,friction:.17,frictionStatic:.48,frictionAir:.004,density:t.density,slop:.015,sleepThreshold:90});body.fruitTier=tier;body.spawnedAt=Date.now();body.mergeLock=false;body.__liveScale=1;if(opts.vx||opts.vy)Body.setVelocity(body,{x:opts.vx||0,y:opts.vy||0});fruits.push(body);World.add(engine.world,body);return body}
-function removeFruit(body){const i=fruits.indexOf(body);if(i>=0)fruits.splice(i,1);World.remove(engine.world,body);merging.delete(body.id)}
+function rebuildWalls(){walls.forEach(w=>World.remove(engine.world,w));const thick=140,sideHeight=height+thick*2;walls=[Bodies.rectangle(-thick/2,height/2,thick,sideHeight,{isStatic:true,label:'wall-left',friction:.001,frictionStatic:0,restitution:.01}),Bodies.rectangle(width+thick/2,height/2,thick,sideHeight,{isStatic:true,label:'wall-right',friction:.001,frictionStatic:0,restitution:.01}),Bodies.rectangle(width/2,height+thick/2,width+thick*2,thick,{isStatic:true,label:'floor',friction:.22,frictionStatic:.35,restitution:.01})];World.add(engine.world,walls)}
+function makeFruit(tier,x,y,opts={}){tier=clamp(Number(tier)||0,0,TIERS.length-1);const t=TIERS[tier],body=Bodies.circle(clamp(x,t.r,width-t.r),y,t.r,{label:'fruit',restitution:.045,friction:.08,frictionStatic:.18,frictionAir:.002,density:t.density,slop:.012,sleepThreshold:Infinity});body.fruitTier=tier;body.spawnedAt=Date.now();body.mergeLock=false;body.__liveScale=1;if(opts.vx||opts.vy)Body.setVelocity(body,{x:opts.vx||0,y:opts.vy||0});fruits.push(body);World.add(engine.world,body);return body}
+function removeFruit(body){const i=fruits.indexOf(body);if(i>=0)fruits.splice(i,1);World.remove(engine.world,body);merging.delete(body.id);if(body?.id===dangerBodyId)resetDanger()}
 function mergePair(a,b){if(!a||!b||a.mergeLock||b.mergeLock||a.fruitTier!==b.fruitTier||a.fruitTier>=TIERS.length-1)return;a.mergeLock=b.mergeLock=true;merging.add(a.id);merging.add(b.id);const next=a.fruitTier+1,x=clamp((a.position.x+b.position.x)/2,TIERS[next].r,width-TIERS[next].r),y=Math.min((a.position.y+b.position.y)/2,height-TIERS[next].r),vx=(a.velocity.x+b.velocity.x)*.22,vy=(a.velocity.y+b.velocity.y)*.12;queueMicrotask(()=>{if(!fruits.includes(a)||!fruits.includes(b))return;removeFruit(a);removeFruit(b);const c=makeFruit(next,x,y,{vx,vy});Body.setAngularVelocity(c,(a.angularVelocity+b.angularVelocity)*.2);clampFruitToField(c,true);addScore(TIERS[next].score,'merge');pulseScore();sendEvent('fruit_merged',{fromTier:next-1,toTier:next,points:TIERS[next].score});sendState('merge')})}
 Events.on(engine,'collisionStart',ev=>{for(const pair of ev.pairs){const a=pair.bodyA,b=pair.bodyB;if(a.label==='fruit'&&b.label==='fruit'&&a.fruitTier===b.fruitTier)mergePair(a,b)}});
 function addScore(n,reason='manual'){score=Math.max(0,Math.round(score+(Number(n)||0)));$('score').textContent=score.toLocaleString('pt-BR');if(reason!=='merge')sendState('score')}
@@ -57,15 +59,18 @@ function pulseScore(){const el=$('score');el.animate?.([{transform:'scale(1)'},{
 function updateNextUI(){setChip($('nextFruit'),nextTier);setChip($('dropPreview'),dropTier);updateAim()}
 function updateAim(){const t=TIERS[dropTier],r=t.r;dropX=clamp(dropX,r+3,width-r-3);$('aimLine').style.left=dropX+'px';const preview=$('dropPreview');preview.style.left=dropX+'px';preview.style.width=(r*2)+'px';preview.style.height=(r*2)+'px'}
 function drop(tier=null,x=dropX,source='player'){if(gameOver||paused||!canDrop)return false;const isPlayer=tier===null;const chosen=isPlayer?dropTier:clamp(Number(tier)||0,0,TIERS.length-1),t=TIERS[chosen];makeFruit(chosen,clamp(x,t.r+3,width-t.r-3),Math.max(18,t.r+4));canDrop=false;setTimeout(()=>{canDrop=true},300);if(isPlayer){dropTier=nextTier;nextTier=randomSpawn();updateNextUI()}sendEvent('fruit_dropped',{tier:chosen,source});sendState('drop');return true}
-function resetGame(){fruits.slice().forEach(removeFruit);score=0;$('score').textContent='0';dropTier=randomSpawn();nextTier=randomSpawn();updateNextUI();gameOver=false;paused=false;dangerSince=0;hideMessage();sendEvent('game_reset');sendState('reset')}
+function ensureDangerHud(){let el=$('dangerCountdown');if(el)return el;el=document.createElement('div');el.id='dangerCountdown';el.className='danger-countdown';el.hidden=true;wrap.appendChild(el);return el}
+function resetDanger(){dangerSince=0;dangerBodyId=null;const el=ensureDangerHud();el.hidden=true;el.textContent=''}
+function updateDangerHud(remaining){const el=ensureDangerHud();el.hidden=false;el.textContent='PERIGO · '+Math.max(1,Math.ceil(remaining/1000))+'s'}
+function resetGame(){fruits.slice().forEach(removeFruit);score=0;$('score').textContent='0';dropTier=randomSpawn();nextTier=randomSpawn();updateNextUI();gameOver=false;paused=false;resetDanger();hideMessage();sendEvent('game_reset');sendState('reset')}
 function showMessage(html){const el=$('gameMessage');el.innerHTML=html;el.hidden=false}
 function hideMessage(){$('gameMessage').hidden=true}
-function endGame(){if(gameOver)return;gameOver=true;showMessage(`FIM DE JOGO<br><small>${score.toLocaleString('pt-BR')} pontos</small>`);sendEvent('game_over',{score});sendState('gameover')}
-function checkDanger(now){if(gameOver||paused||now-lastDangerCheck<120)return;lastDangerCheck=now;const stamp=Date.now(),risky=fruits.some(b=>stamp-b.spawnedAt>1300&&b.position.y-bodyRadius(b)<88&&Math.abs(b.velocity.x)+Math.abs(b.velocity.y)<1.45);if(risky){if(!dangerSince)dangerSince=stamp;if(stamp-dangerSince>2300)endGame()}else dangerSince=0}
+function endGame(){if(gameOver)return;gameOver=true;resetDanger();showMessage(`FIM DE JOGO<br><small>${score.toLocaleString('pt-BR')} pontos</small>`);sendEvent('game_over',{score});sendState('gameover')}
+function checkDanger(now){if(gameOver||paused||now-lastDangerCheck<100)return;lastDangerCheck=now;const stamp=Date.now();const candidates=fruits.filter(b=>stamp-b.spawnedAt>600&&(b.position.y+bodyRadius(b))<DANGER_Y);let candidate=null;if(dangerBodyId!==null)candidate=candidates.find(b=>b.id===dangerBodyId)||null;if(!candidate&&candidates.length)candidate=candidates.sort((a,b)=>(a.position.y+bodyRadius(a))-(b.position.y+bodyRadius(b)))[0];if(!candidate){resetDanger();return}if(dangerBodyId!==candidate.id){dangerBodyId=candidate.id;dangerSince=stamp}const elapsed=stamp-dangerSince;if(elapsed>=DANGER_HOLD_MS){endGame();return}updateDangerHud(DANGER_HOLD_MS-elapsed)}
 function drawFruit(b){const t=TIERS[b.fruitTier],sprite=fruitSprites[b.fruitTier],r=t.r,pad=(sprite.width/2)-r,half=(r+pad)*(Number(b.__liveScale)||1);ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);ctx.drawImage(sprite,-half,-half,half*2,half*2);ctx.restore()}
 function draw(){ctx.clearRect(0,0,width,height);for(let i=0;i<fruits.length;i++)drawFruit(fruits[i])}
 function tick(now){const elapsed=Math.min(50,Math.max(0,now-last));last=now;if(!paused&&!gameOver){accumulator+=elapsed;let steps=0;while(accumulator>=FIXED_STEP&&steps<MAX_SUBSTEPS){Engine.update(engine,FIXED_STEP);enforcePlayfield();accumulator-=FIXED_STEP;steps++}if(steps===MAX_SUBSTEPS&&accumulator>FIXED_STEP)accumulator=0}else accumulator=0;checkDanger(now);draw();requestAnimationFrame(tick)}
-function stateSnapshot(scope='game'){return{scope,gameId:GAME_ID,version:VERSION,score,gameOver,paused,dropTier,currentFruit:TIERS[dropTier].id,nextTier,nextFruit:TIERS[nextTier].id,fruitCount:fruits.length,highestTier:fruits.reduce((m,b)=>Math.max(m,b.fruitTier),0),rules:panelRules.length,transport:session?.getTransport?.()||'offline'}}
+function stateSnapshot(scope='game'){const dangerRemaining=dangerSince?Math.max(0,DANGER_HOLD_MS-(Date.now()-dangerSince)):0;return{scope,gameId:GAME_ID,version:VERSION,score,gameOver,paused,dropTier,currentFruit:TIERS[dropTier].id,nextTier,nextFruit:TIERS[nextTier].id,fruitCount:fruits.length,highestTier:fruits.reduce((m,b)=>Math.max(m,b.fruitTier),0),dangerRemainingMs:dangerRemaining,rules:panelRules.length,transport:session?.getTransport?.()||'offline'}}
 function sendState(scope='game'){session?.sendState(stateSnapshot(scope))}
 function sendEvent(event,data={}){session?.sendEvent({gameId:GAME_ID,event,...data})}
 function executeCommand(data={}){if(data.gameId&&String(data.gameId)!==GAME_ID)return false;const action=String(data.action||data.command||''),p=data.params&&typeof data.params==='object'?data.params:{};switch(action){case'drop_fruit':{const tier=p.tier==='random'?randomSpawn():clamp(Number(p.tier)||0,0,TIERS.length-1);return drop(tier,dropX,'panel')}case'set_next_fruit':nextTier=clamp(Number(p.tier)||0,0,TIERS.length-1);updateNextUI();sendState('next');return true;case'add_score':addScore(Math.max(0,Number(p.amount)||0));return true;case'set_score':score=Math.max(0,Math.round(Number(p.amount)||0));$('score').textContent=score.toLocaleString('pt-BR');sendState('score');return true;case'shake':{const power=clamp(Number(p.power)||4,1,10);fruits.forEach(b=>Body.applyForce(b,b.position,{x:(Math.random()-.5)*.0008*power*b.mass,y:-.00012*power*b.mass}));sendEvent('box_shaken',{power});return true}case'clear_small':{const max=clamp(Number(p.maxTier)||0,0,4);fruits.slice().filter(b=>b.fruitTier<=max).forEach(removeFruit);sendState('clear');return true}case'pause_game':paused=!paused;if(paused)showMessage('PAUSADO');else hideMessage();sendState('pause');return true;case'reset_game':resetGame();return true;default:return false}}
@@ -88,7 +93,7 @@ $('panelCode').oninput=e=>e.target.value=formatCode(e.target.value);
 $('panelCode').onkeydown=e=>{if(e.key==='Enter')connectPanel()};
 function buildProgression(){$('progressionTrack').innerHTML=TIERS.map((t,i)=>`<div class="tier-pill" title="${t.name}: ${t.score} pontos"><span class="tier-swatch" style="--fruit-color:${t.color};--fruit-dark:${shade(t.color,-30)}" aria-hidden="true"></span><b>${i?`+${t.score}`:'INÍCIO'}</b></div>`).join('')}
 try{const saved=localStorage.getItem('frutas-panel-code');if(saved)$('panelCode').value=saved}catch{}
-rebuildSprites();buildProgression();updateNextUI();resize();
+rebuildSprites();buildProgression();updateNextUI();ensureDangerHud();resize();
 let resizeTimer=0;const scheduleResize=()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(resize,70)};addEventListener('resize',scheduleResize,{passive:true});if('ResizeObserver'in window)new ResizeObserver(scheduleResize).observe(wrap);
 document.addEventListener('visibilitychange',()=>{last=performance.now();accumulator=0;scheduleResize()});
 requestAnimationFrame(tick);
