@@ -1,84 +1,44 @@
 (()=>{'use strict';
 const canvas=document.getElementById('gameCanvas');
-const wrap=canvas?.parentElement;
-if(!canvas||!wrap)return;
+if(!canvas)return;
 
-// Bloqueia zoom/gestos acidentais no campo sem interferir no restante da página.
-const stopGesture=e=>{if(wrap.contains(e.target))e.preventDefault()};
+const stopGesture=e=>{e.preventDefault();};
 document.addEventListener('gesturestart',stopGesture,{passive:false});
 document.addEventListener('gesturechange',stopGesture,{passive:false});
 document.addEventListener('gestureend',stopGesture,{passive:false});
-wrap.style.touchAction='none';
-wrap.style.userSelect='none';
-wrap.style.webkitUserSelect='none';
-canvas.style.touchAction='none';
+canvas.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 
 let lastTouchEnd=0;
-wrap.addEventListener('touchend',e=>{
+document.addEventListener('touchend',e=>{
   const now=Date.now();
   if(now-lastTouchEnd<=350)e.preventDefault();
   lastTouchEnd=now;
 },{passive:false});
-wrap.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 
-let aimedX=null;
-let activePointer=null;
-
-// Converte a posição VISUAL do toque para o mesmo sistema de coordenadas
-// usado pela física. Isso corrige diferenças entre borda CSS, canvas e DPR.
-function logicalXFromClient(clientX){
-  const canvasRect=canvas.getBoundingClientRect();
-  const wrapRect=wrap.getBoundingClientRect();
-  const visual=Math.max(0,Math.min(canvasRect.width,clientX-canvasRect.left));
-  const logicalWidth=Math.max(1,wrapRect.width);
-  return visual*(logicalWidth/Math.max(1,canvasRect.width));
+function physicsX(e){
+  const rect=canvas.getBoundingClientRect();
+  const metrics=window.FrutasGame?.getFieldMetrics?.();
+  const fieldWidth=Math.max(1,Number(metrics?.width)||rect.width);
+  const local=Math.max(0,Math.min(rect.width,e.clientX-rect.left));
+  return local*(fieldWidth/Math.max(1,rect.width));
 }
 
-function setAimFromEvent(e){
-  if(!window.FrutasGame)return null;
-  aimedX=logicalXFromClient(e.clientX);
-  window.FrutasGame.setDropX(aimedX);
-  return aimedX;
-}
-
-function onPointerDown(e){
+function aim(e){
   if(!window.FrutasGame)return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  activePointer=e.pointerId;
-  try{canvas.setPointerCapture?.(e.pointerId)}catch{}
-  setAimFromEvent(e);
+  window.FrutasGame.setDropX(physicsX(e));
 }
-
-function onPointerMove(e){
+function release(e){
   if(!window.FrutasGame)return;
-  if(activePointer!==null&&e.pointerId!==activePointer)return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  setAimFromEvent(e);
+  const x=physicsX(e);
+  window.FrutasGame.setDropX(x);
+  window.FrutasGame.dropFruit(null,x);
 }
 
-function onPointerUp(e){
-  if(!window.FrutasGame)return;
-  if(activePointer!==null&&e.pointerId!==activePointer)return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  // Usa exatamente a mesma coordenada mostrada pela mira no instante da soltura.
-  const x=setAimFromEvent(e)??aimedX;
-  if(x!==null)window.FrutasGame.dropFruit(null,x);
-  try{canvas.releasePointerCapture?.(e.pointerId)}catch{}
-  activePointer=null;
-}
-
-function onPointerCancel(e){
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  try{canvas.releasePointerCapture?.(e.pointerId)}catch{}
-  activePointer=null;
-}
-
-canvas.addEventListener('pointerdown',onPointerDown,{capture:true,passive:false});
-canvas.addEventListener('pointermove',onPointerMove,{capture:true,passive:false});
-canvas.addEventListener('pointerup',onPointerUp,{capture:true,passive:false});
-canvas.addEventListener('pointercancel',onPointerCancel,{capture:true,passive:false});
+canvas.addEventListener('pointermove',aim,{capture:true,passive:false});
+canvas.addEventListener('pointerup',release,{capture:true,passive:false});
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCapture?.(e.pointerId);},{capture:true,passive:false});
 })();
