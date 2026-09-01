@@ -1,5 +1,6 @@
 (()=>{'use strict';
 const game=()=>window.FrutasGame;
+const STORAGE_KEY='frutas-auto-player-state-v1';
 let enabled=false,timer=0,intervalMs=720,autoRestart=true,lastDecision=null;
 let stats={startedAt:0,drops:0,merges:0,gameOvers:0,highestTier:0,highestScore:0};
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -8,6 +9,8 @@ const adminTools=[
 {id:'auto_player_stop',icon:'STOP',label:'Parar jogador automático',description:'Interrompe imediatamente o jogador automático.',params:[]},
 {id:'auto_player_reset_stats',icon:'RST',label:'Zerar estatísticas do automático',description:'Zera apenas as métricas de teste do jogador automático.',params:[]}
 ];
+function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({enabled,intervalMs,autoRestart}))}catch{}}
+function restorePrefs(){try{const d=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(!d||typeof d!=='object')return false;enabled=!!d.enabled;intervalMs=clamp(Number(d.intervalMs)||720,350,5000);autoRestart=d.autoRestart!==false;return true}catch{return false}}
 function resetStats(){stats={startedAt:enabled?Date.now():0,drops:0,merges:0,gameOvers:0,highestTier:0,highestScore:0};return getStats()}
 function snapshot(){const g=game(),s=g?.getState?.()||{},b=g?.getBodies?.()||[];return{g,s,b,m:g?.getFieldMetrics?.()||{},tiers:g?.tiers||[]}}
 function columnSafety(x,tier,bodies,height,tiers){const r=Number(tiers?.[tier]?.r)||17;let top=height,crowd=0;for(const b of bodies){const br=(Number(tiers?.[b.fruitTier]?.r)||17)*(Number(b.__liveScale)||1),dx=Math.abs(b.position.x-x);if(dx<=r+br+4){top=Math.min(top,b.position.y-br);crowd+=Math.max(0,1-dx/Math.max(1,r+br))}}return top-crowd*7}
@@ -16,15 +19,18 @@ function chooseX(){const {s,b,m,tiers}=snapshot(),width=Math.max(120,Number(m.wi
 function updateStats(){const {s,b}=snapshot();stats.highestScore=Math.max(stats.highestScore,Number(s.score)||0);for(const body of b)stats.highestTier=Math.max(stats.highestTier,Number(body.fruitTier)||0)}
 function schedule(ms=intervalMs){clearTimeout(timer);if(enabled)timer=setTimeout(step,Math.max(350,ms))}
 function step(){if(!enabled)return;const {g,s}=snapshot();if(!g){schedule(900);return}updateStats();if(s.gameOver){if(autoRestart){stats.gameOvers++;g.reset?.();schedule(900)}else schedule(1200);return}if(s.paused){schedule(700);return}const decision=chooseX();lastDecision={...decision,at:Date.now()};g.setDropX?.(decision.x);const body=g.dropFruit?.(null,decision.x);if(body)stats.drops++;schedule(body?intervalMs:380)}
-function start(opts={}){if(Number(opts.intervalMs)>=350)intervalMs=clamp(Number(opts.intervalMs),350,5000);if(typeof opts.autoRestart==='boolean')autoRestart=opts.autoRestart;if(enabled)return getState();enabled=true;if(!stats.startedAt)stats.startedAt=Date.now();schedule(120);return getState()}
-function stop(){enabled=false;clearTimeout(timer);timer=0;return getState()}
+function start(opts={}){if(Number(opts.intervalMs)>=350)intervalMs=clamp(Number(opts.intervalMs),350,5000);if(typeof opts.autoRestart==='boolean')autoRestart=opts.autoRestart;if(enabled){persist();return getState()}enabled=true;if(!stats.startedAt)stats.startedAt=Date.now();persist();schedule(120);return getState()}
+function stop(){enabled=false;clearTimeout(timer);timer=0;persist();return getState()}
 function toggle(){return enabled?stop():start()}
-function setSpeed(ms){intervalMs=clamp(Number(ms)||720,350,5000);if(enabled)schedule(80);return intervalMs}
-function setAutoRestart(value){autoRestart=!!value;return autoRestart}
+function setSpeed(ms){intervalMs=clamp(Number(ms)||720,350,5000);persist();if(enabled)schedule(80);return intervalMs}
+function setAutoRestart(value){autoRestart=!!value;persist();return autoRestart}
 function getStats(){updateStats();return{...stats,elapsedMs:stats.startedAt?Date.now()-stats.startedAt:0}}
 function getState(){return{enabled,intervalMs,autoRestart,lastDecision,stats:getStats()}}
 async function executeAdmin(data={}){const action=String(data.action||data.command||''),p=data.params||{};if(action==='auto_player_start'){start({intervalMs:p.intervalMs,autoRestart:p.autoRestart});return true}if(action==='auto_player_stop'){stop();return true}if(action==='auto_player_reset_stats'){resetStats();return true}return false}
 window.addEventListener('frutas:event',e=>{const d=e.detail||{};if(d.event==='fruit_merged')stats.merges++;if(d.event==='game_over'&&!autoRestart)stats.gameOvers++;updateStats()});
 window.addEventListener('frutas:reset',()=>{if(enabled)schedule(750)});
+window.addEventListener('pagehide',persist);
+restorePrefs();
 window.FrutasAutoPlayer={adminTools,start,stop,toggle,setSpeed,setAutoRestart,resetStats,getStats,getState,chooseX,executeAdmin};
+if(enabled){if(!stats.startedAt)stats.startedAt=Date.now();schedule(900)}
 })();
