@@ -2,14 +2,14 @@
 const canvas=document.getElementById('gameCanvas');
 if(!canvas)return;
 
-const stopGesture=e=>{e.preventDefault();};
+const stopGesture=e=>{if(e.target===canvas||canvas.contains?.(e.target))e.preventDefault();};
 document.addEventListener('gesturestart',stopGesture,{passive:false});
 document.addEventListener('gesturechange',stopGesture,{passive:false});
 document.addEventListener('gestureend',stopGesture,{passive:false});
 canvas.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 
 let lastTouchEnd=0;
-document.addEventListener('touchend',e=>{
+canvas.addEventListener('touchend',e=>{
   const now=Date.now();
   if(now-lastTouchEnd<=350)e.preventDefault();
   lastTouchEnd=now;
