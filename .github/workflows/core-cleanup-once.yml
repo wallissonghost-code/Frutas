@@ -1,0 +1,45 @@
+name: Limpeza unica do game core
+on:
+  push:
+    paths:
+      - '.github/workflows/core-cleanup-once.yml'
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remover legado de painel e input do game.js
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('game.js')
+          s=p.read_text()
+          s=s.replace("const VERSION='Beta 0.0.8';\nconst GAME_ID='frutas';\nconst STORAGE_KEY='frutas-game-state-v1';", "const C=window.FRUTAS_CONFIG||{};\nconst VERSION=C.version||'Beta 0.0.8';\nconst GAME_ID=C.gameId||'frutas';\nconst STORAGE_KEY=C.gameStorageKey||'frutas-game-state-v1';")
+          s=s.replace("const FINAL_MERGE_BONUS=500;", "const FINAL_MERGE_BONUS=Number(C.finalMergeBonus)||500;")
+          s=s.replace(",dangerBodyId=null,session=null,panelRules=[];", ",dangerBodyId=null;")
+          s=re.sub(r"const tierOptions=.*?\nconst manifest=.*?\n\]};\n(?=function randomSpawn)", "", s, flags=re.S)
+          s=re.sub(r"function stateSnapshot\(scope='game'\)\{.*?\}\n(?=function serializableState)", "function stateSnapshot(scope='game'){const dangerRemaining=dangerSince?Math.max(0,DANGER_HOLD_MS-(Date.now()-dangerSince)):0;return{scope,gameId:GAME_ID,version:VERSION,score,gameOver,paused,dropTier,currentFruit:TIERS[dropTier].id,nextTier,nextFruit:TIERS[nextTier].id,fruitCount:fruits.length,highestTier:fruits.reduce((m,b)=>Math.max(m,b.fruitTier),0),dangerRemainingMs:dangerRemaining}}\n", s, flags=re.S)
+          s=re.sub(r"function sendState\(scope='game'\)\{.*?\}\nfunction sendEvent\(event,data=\{\}\)\{.*?\}\n", "function sendState(scope='game'){window.dispatchEvent(new CustomEvent('frutas:state',{detail:{scope,state:stateSnapshot(scope)}}))}\nfunction sendEvent(event,data={}){window.dispatchEvent(new CustomEvent('frutas:event',{detail:{gameId:GAME_ID,event,...data}}))}\n", s, flags=re.S)
+          s=re.sub(r"function setPairStatus\(.*?(?=function pointerX)", "", s, flags=re.S)
+          s=re.sub(r"function pointerX\(.*?(?=\$\('panelButton'\))", "", s, flags=re.S)
+          s=re.sub(r"\$\('panelButton'\).*?\n(?=function buildProgression)", "$('panelButton').onclick=()=>{$('panelModal').classList.add('show');$('panelModal').setAttribute('aria-hidden','false')};$('closePanel').onclick=()=>$('panelModal').classList.remove('show');$('panelModal').onclick=e=>{if(e.target===$('panelModal'))$('panelModal').classList.remove('show')};$('restartButton').onclick=resetGame;\n", s, flags=re.S)
+          s=re.sub(r"try\{const saved=localStorage\.getItem\('frutas-panel-code'\).*?\n(?=rebuildSprites)", "", s, flags=re.S)
+          s=s.replace("window.FrutasGame={version:VERSION,gameId:GAME_ID,manifest,tiers:", "window.FrutasGame={version:VERSION,gameId:GAME_ID,tiers:")
+          s=s.replace(",connectPanel,forceResize:resize", ",forceResize:resize")
+          forbidden=['const manifest=','function connectPanel()','function pointerX(','session=new window.LivePlusGameSDK.Session','canvas.addEventListener(\'pointermove\'']
+          found=[x for x in forbidden if x in s]
+          if found: raise SystemExit('Legado ainda presente: '+repr(found))
+          p.write_text(s)
+          print('game.js:',len(s),'bytes')
+          PY
+      - name: Commit da limpeza
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add game.js
+          git diff --cached --check
+          git commit -m "Remove painel e input legados do game core"
+          git push
