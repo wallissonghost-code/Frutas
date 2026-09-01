@@ -1,0 +1,30 @@
+(()=>{'use strict';
+const game=()=>window.FrutasGame;
+let enabled=false,timer=0,intervalMs=720,autoRestart=true,lastDecision=null;
+let stats={startedAt:0,drops:0,merges:0,gameOvers:0,highestTier:0,highestScore:0};
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+function resetStats(){stats={startedAt:enabled?Date.now():0,drops:0,merges:0,gameOvers:0,highestTier:0,highestScore:0};render();return getStats()}
+function snapshot(){const g=game(),s=g?.getState?.()||{},b=g?.getBodies?.()||[];return{g,s,b,m:g?.getFieldMetrics?.()||{},tiers:g?.tiers||[]}}
+function columnSafety(x,tier,bodies,height,tiers){const r=Number(tiers?.[tier]?.r)||17;let top=height;let crowd=0;for(const b of bodies){const br=(Number(tiers?.[b.fruitTier]?.r)||17)*(Number(b.__liveScale)||1),dx=Math.abs(b.position.x-x);if(dx<=r+br+4){top=Math.min(top,b.position.y-br);crowd+=Math.max(0,1-dx/Math.max(1,r+br))}}return top-crowd*7}
+function targetScore(body,tier,bodies,height,tiers){const br=(Number(tiers?.[body.fruitTier]?.r)||17)*(Number(body.__liveScale)||1);const top=body.position.y-br;const safe=top>100?40:top*.25;let congestion=0;for(const other of bodies){if(other===body)continue;const or=(Number(tiers?.[other.fruitTier]?.r)||17)*(Number(other.__liveScale)||1),d=Math.hypot(other.position.x-body.position.x,other.position.y-body.position.y);if(d<br+or+10)congestion+=8}return body.position.y*.42+safe-congestion+(body.position.y>height*.72?24:0)}
+function chooseX(){const {s,b,m,tiers}=snapshot();const width=Math.max(120,Number(m.width)||360),height=Math.max(220,Number(m.height)||560),tier=clamp(Number(s.dropTier)||0,0,Math.max(0,tiers.length-1)),r=Number(tiers?.[tier]?.r)||17,min=r+4,max=width-r-4;
+ const same=b.filter(x=>x?.label==='fruit'&&Number(x.fruitTier)===tier&&!x.mergeLock);
+ if(same.length){same.sort((a,c)=>targetScore(c,tier,b,height,tiers)-targetScore(a,tier,b,height,tiers));const target=same[0],jitter=Math.min(5,r*.18)*(Math.random()-.5);return{ x:clamp(target.position.x+jitter,min,max),reason:'match',tier,targetTier:target.fruitTier,targetX:target.position.x};}
+ const lanes=9,candidates=[];for(let i=0;i<lanes;i++){const x=min+(max-min)*(i/(lanes-1));let score=columnSafety(x,tier,b,height,tiers);for(const body of b){const d=Math.abs(body.position.x-x);if(d<r*1.5){if(body.fruitTier===tier-1)score+=8;if(body.fruitTier===tier+1)score+=4}}score+=(Math.random()-.5)*1.5;candidates.push({x,score})}candidates.sort((a,c)=>c.score-a.score);return{x:candidates[0].x,reason:'safe',tier};}
+function updateStats(){const {s,b}=snapshot();stats.highestScore=Math.max(stats.highestScore,Number(s.score)||0);for(const body of b)stats.highestTier=Math.max(stats.highestTier,Number(body.fruitTier)||0)}
+function schedule(ms=intervalMs){clearTimeout(timer);if(!enabled)return;timer=setTimeout(step,Math.max(350,ms))}
+function step(){if(!enabled)return;const {g,s}=snapshot();if(!g){schedule(900);return}updateStats();if(s.gameOver){if(autoRestart){stats.gameOvers++;g.reset?.();schedule(900)}else schedule(1200);return}if(s.paused){schedule(700);return}const decision=chooseX();lastDecision={...decision,at:Date.now()};g.setDropX?.(decision.x);const body=g.dropFruit?.(null,decision.x);if(body)stats.drops++;render();schedule(body?intervalMs:380)}
+function start(opts={}){if(Number(opts.intervalMs)>=350)intervalMs=Number(opts.intervalMs);if(typeof opts.autoRestart==='boolean')autoRestart=opts.autoRestart;if(enabled)return getState();enabled=true;if(!stats.startedAt)stats.startedAt=Date.now();render();schedule(120);return getState()}
+function stop(){enabled=false;clearTimeout(timer);timer=0;render();return getState()}
+function toggle(){return enabled?stop():start()}
+function setSpeed(ms){intervalMs=clamp(Number(ms)||720,350,5000);if(enabled)schedule(80);render();return intervalMs}
+function setAutoRestart(value){autoRestart=!!value;render();return autoRestart}
+function getStats(){updateStats();return{...stats,elapsedMs:stats.startedAt?Date.now()-stats.startedAt:0}}
+function getState(){return{enabled,intervalMs,autoRestart,lastDecision,stats:getStats()}}
+function render(){const btn=document.getElementById('autoPlayerToggle'),info=document.getElementById('autoPlayerStatus');if(btn)btn.textContent=enabled?'Parar jogador automático':'Iniciar jogador automático';if(info){const s=getStats();info.textContent=enabled?`AUTO ATIVO · ${s.drops} jogadas · ${s.merges} merges · recorde ${s.highestScore.toLocaleString('pt-BR')}`:`Automação administrativa desligada · intervalo ${intervalMs} ms`}}
+function installControl(){const card=document.querySelector('#panelModal .modal-card');if(!card||document.getElementById('autoPlayerToggle'))return;const hr=document.createElement('hr'),title=document.createElement('p'),btn=document.createElement('button'),info=document.createElement('div');title.textContent='Teste automático';title.style.fontWeight='700';title.style.margin='12px 0 8px';btn.id='autoPlayerToggle';btn.type='button';btn.className='secondary-button';btn.onclick=toggle;info.id='autoPlayerStatus';info.className='pair-message';info.style.marginTop='8px';card.append(hr,title,btn,info);render()}
+window.addEventListener('frutas:event',e=>{const d=e.detail||{};if(d.event==='fruit_merged')stats.merges++;if(d.event==='game_over'&&!autoRestart)stats.gameOvers++;updateStats();render()});
+window.addEventListener('frutas:reset',()=>{if(enabled)schedule(750)});
+installControl();
+window.FrutasAutoPlayer={start,stop,toggle,setSpeed,setAutoRestart,resetStats,getStats,getState,chooseX};
+})();
