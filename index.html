@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Frutas · Beta 0.0.5</title>
+  <title>Frutas · Beta 0.0.6</title>
   <script>
     (()=>{
       const fresh=Date.now();
@@ -40,7 +40,7 @@
       <div class="game-message" id="gameMessage" hidden></div>
     </section>
     <section class="progression" aria-label="Evolução das frutas"><div class="progression-track" id="progressionTrack"></div><small>Junte 2 frutas iguais para evoluir</small></section>
-    <footer class="statusbar"><span><i id="statusDot"></i><b id="panelStatus">Painel offline</b></span><span>Beta 0.0.5</span></footer>
+    <footer class="statusbar"><span><i id="statusDot"></i><b id="panelStatus">Painel offline</b></span><span>Beta 0.0.6</span></footer>
   </main>
   <div class="modal" id="panelModal" aria-hidden="true"><div class="modal-card"><button class="close-button" id="closePanel" type="button">×</button><h2>Painel universal</h2><p>Digite o código de 8 caracteres gerado pelo Projeto Daniel.</p><input id="panelCode" maxlength="9" autocomplete="off" placeholder="ABCD-EFGH" /><button class="connect-button" id="connectPanel" type="button">Conectar</button><div class="pair-message" id="pairMessage">Aguardando conexão.</div><hr /><button class="secondary-button" id="restartButton" type="button">Reiniciar partida</button></div></div>
   <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
@@ -53,6 +53,11 @@
       game.onload=()=>{
         const fix=document.createElement('script');
         fix.src='./mobile-input-fix.js?fresh='+fresh;
+        fix.onload=()=>{
+          const live=document.createElement('script');
+          live.src='./live-actions.js?fresh='+fresh;
+          document.body.appendChild(live);
+        };
         document.body.appendChild(fix);
       };
       document.body.appendChild(game);
