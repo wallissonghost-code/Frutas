@@ -5,8 +5,9 @@
   "scripts": {
     "serve": "http-server . -p 4173 -c-1",
     "test:quick": "playwright test tests/quick.spec.js",
+    "test:visual": "playwright test tests/visual.spec.js",
     "test:long": "playwright test tests/long.spec.js",
-    "test": "npm run test:quick"
+    "test": "npm run test:quick && npm run test:visual"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
