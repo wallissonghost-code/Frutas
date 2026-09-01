@@ -1,4 +1,4 @@
-name: QA rapido - Frutas
+name: QA rapido + visual - Frutas
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   quick-qa:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,13 +24,15 @@ jobs:
         run: npm install
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
-      - name: Rodar QA rapido
+      - name: Rodar QA funcional rapido
         run: npm run test:quick
-      - name: Guardar relatorio em falha
-        if: failure()
+      - name: Rodar QA visual mobile
+        run: npm run test:visual
+      - name: Guardar relatorio e screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frutas-qa-quick-report
+          name: frutas-qa-quick-visual-report
           path: |
             playwright-report/
             test-results/
