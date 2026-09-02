@@ -1,4 +1,4 @@
-# Frutas — Beta 0.0.20
+# Frutas — Beta 0.0.21
 
 Jogo de combinação de bolas com integração LIVE+.
 
