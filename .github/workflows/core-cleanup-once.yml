@@ -1,4 +1,4 @@
-name: Limpeza unica do game core
+name: Hardening unico Beta 0.0.20
 on:
   push:
     paths:
@@ -6,40 +6,131 @@ on:
 permissions:
   contents: write
 jobs:
-  cleanup:
+  hardening:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Remover legado de painel e input do game.js
+      - name: Aplicar correcoes e limpeza
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
-          p=Path('game.js')
+          import json, re
+
+          def replace(path, old, new):
+              p=Path(path); s=p.read_text()
+              if old not in s:
+                  raise SystemExit(f'Padrao nao encontrado em {path}: {old[:80]!r}')
+              p.write_text(s.replace(old,new))
+
+          # 1) Core: nunca persistir escala temporaria. Efeitos LIVE+ sao restaurados pelo live-actions.
+          replace('game.js',
+              "scale:Number(b.__liveScale)||1,spawnedAt:b.spawnedAt",
+              "scale:1,spawnedAt:b.spawnedAt")
+
+          # 2) Idempotencia: so marcar como concluido depois de execucao bem sucedida.
+          p=Path('action-manager.js')
           s=p.read_text()
-          s=s.replace("const VERSION='Beta 0.0.8';\nconst GAME_ID='frutas';\nconst STORAGE_KEY='frutas-game-state-v1';", "const C=window.FRUTAS_CONFIG||{};\nconst VERSION=C.version||'Beta 0.0.8';\nconst GAME_ID=C.gameId||'frutas';\nconst STORAGE_KEY=C.gameStorageKey||'frutas-game-state-v1';")
-          s=s.replace("const FINAL_MERGE_BONUS=500;", "const FINAL_MERGE_BONUS=Number(C.finalMergeBonus)||500;")
-          s=s.replace(",dangerBodyId=null,session=null,panelRules=[];", ",dangerBodyId=null;")
-          s=re.sub(r"const tierOptions=.*?\nconst manifest=.*?\n\]};\n(?=function randomSpawn)", "", s, flags=re.S)
-          s=re.sub(r"function stateSnapshot\(scope='game'\)\{.*?\}\n(?=function serializableState)", "function stateSnapshot(scope='game'){const dangerRemaining=dangerSince?Math.max(0,DANGER_HOLD_MS-(Date.now()-dangerSince)):0;return{scope,gameId:GAME_ID,version:VERSION,score,gameOver,paused,dropTier,currentFruit:TIERS[dropTier].id,nextTier,nextFruit:TIERS[nextTier].id,fruitCount:fruits.length,highestTier:fruits.reduce((m,b)=>Math.max(m,b.fruitTier),0),dangerRemainingMs:dangerRemaining}}\n", s, flags=re.S)
-          s=re.sub(r"function sendState\(scope='game'\)\{.*?\}\nfunction sendEvent\(event,data=\{\}\)\{.*?\}\n", "function sendState(scope='game'){window.dispatchEvent(new CustomEvent('frutas:state',{detail:{scope,state:stateSnapshot(scope)}}))}\nfunction sendEvent(event,data={}){window.dispatchEvent(new CustomEvent('frutas:event',{detail:{gameId:GAME_ID,event,...data}}))}\n", s, flags=re.S)
-          s=re.sub(r"function setPairStatus\(.*?(?=function pointerX)", "", s, flags=re.S)
-          s=re.sub(r"function pointerX\(.*?(?=\$\('panelButton'\))", "", s, flags=re.S)
-          s=re.sub(r"\$\('panelButton'\).*?\n(?=function buildProgression)", "$('panelButton').onclick=()=>{$('panelModal').classList.add('show');$('panelModal').setAttribute('aria-hidden','false')};$('closePanel').onclick=()=>$('panelModal').classList.remove('show');$('panelModal').onclick=e=>{if(e.target===$('panelModal'))$('panelModal').classList.remove('show')};$('restartButton').onclick=resetGame;\n", s, flags=re.S)
-          s=re.sub(r"try\{const saved=localStorage\.getItem\('frutas-panel-code'\).*?\n(?=rebuildSprites)", "", s, flags=re.S)
-          s=s.replace("window.FrutasGame={version:VERSION,gameId:GAME_ID,manifest,tiers:", "window.FrutasGame={version:VERSION,gameId:GAME_ID,tiers:")
-          s=s.replace(",connectPanel,forceResize:resize", ",forceResize:resize")
-          forbidden=['const manifest=','function connectPanel()','function pointerX(','session=new window.LivePlusGameSDK.Session','canvas.addEventListener(\'pointermove\'']
-          found=[x for x in forbidden if x in s]
-          if found: raise SystemExit('Legado ainda presente: '+repr(found))
+          s=s.replace("const C=window.FRUTAS_CONFIG||{},SEEN_KEY=C.seenCommandsKey||'frutas-live-seen-v1',seen=new Map(),queues=new Map();",
+                      "const C=window.FRUTAS_CONFIG||{},SEEN_KEY=C.seenCommandsKey||'frutas-live-seen-v1',seen=new Map(),processing=new Set(),queues=new Map();")
+          old="async function run(data,executor){cleanup();const action=String(data?.action||data?.command||''),id=eventId(data);if(id&&seen.has(id))return{ok:true,duplicate:true};if(id){seen.set(id,Date.now());persist()}const mode=policy(action);if(mode!=='queue')return{ok:!!(await executor(data)),duplicate:false};const prev=queues.get(action)||Promise.resolve();const next=prev.catch(()=>{}).then(()=>executor(data));queues.set(action,next.finally(()=>{if(queues.get(action)===next)queues.delete(action)}));return{ok:!!(await next),duplicate:false}}"
+          new="async function run(data,executor){cleanup();const action=String(data?.action||data?.command||''),id=eventId(data);if(id&&seen.has(id))return{ok:true,duplicate:true};if(id&&processing.has(id))return{ok:true,duplicate:true,processing:true};if(id)processing.add(id);const finish=ok=>{if(id)processing.delete(id);if(ok&&id){seen.set(id,Date.now());persist()}return{ok:!!ok,duplicate:false}};try{const mode=policy(action);if(mode!=='queue')return finish(await executor(data));const prev=queues.get(action)||Promise.resolve();const next=prev.catch(()=>{}).then(()=>executor(data));queues.set(action,next.finally(()=>{if(queues.get(action)===next)queues.delete(action)}));return finish(await next)}catch(err){if(id)processing.delete(id);throw err}}"
+          if old not in s: raise SystemExit('run antigo do action-manager nao encontrado')
+          s=s.replace(old,new).replace("function clear({persisted=false}={}){seen.clear();queues.clear();", "function clear({persisted=false}={}){seen.clear();processing.clear();queues.clear();")
           p.write_text(s)
-          print('game.js:',len(s),'bytes')
+
+          # 3) Fila: sucesso remove; falha temporaria permanece; acao desconhecida e descartada.
+          p=Path('panel-bridge.js'); s=p.read_text()
+          marker="function isAdmin(data={}){return data.admin===true||data.channel==='admin'}"
+          insert=marker+"\nfunction knownAction(data={}){const id=String(data.action||data.command||'');if(isAdmin(data))return (window.FrutasAutoPlayer?.adminTools||[]).some(a=>a.id===id);return (window.FrutasLiveActions?.actions||[]).some(a=>a.id===id)}"
+          if marker not in s: raise SystemExit('marker isAdmin nao encontrado')
+          s=s.replace(marker,insert)
+          old="while(pendingCommands.length&&!gameProtected()){const item=pendingCommands[0];try{await executeCommand(item.data);pendingCommands.shift();saveQueue()}catch{saveQueue();flushTimer=setTimeout(flushPending,800);return}await new Promise(r=>setTimeout(r,120))}"
+          new="while(pendingCommands.length&&!gameProtected()){const item=pendingCommands[0];if(!knownAction(item.data)){pendingCommands.shift();saveQueue();continue}try{const ok=await executeCommand(item.data);if(ok){pendingCommands.shift();saveQueue()}else{saveQueue();flushTimer=setTimeout(flushPending,800);return}}catch{saveQueue();flushTimer=setTimeout(flushPending,800);return}await new Promise(r=>setTimeout(r,120))}"
+          if old not in s: raise SystemExit('flush antigo nao encontrado')
+          s=s.replace(old,new)
+          p.write_text(s)
+
+          # 4) Testes novos de resiliencia.
+          t=Path('tests/resilience.spec.js')
+          t.write_text("""const { test, expect } = require('@playwright/test');
+async function boot(page){await page.goto('/?qa=resilience',{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.FrutasGame&&window.FrutasLiveActions&&window.FrutasPanelBridge&&window.FrutasActionManager&&window.FrutasAutoPlayer,null,{timeout:15000})}
+async function reset(page){await page.evaluate(()=>{FrutasAutoPlayer?.stop?.();return FrutasLiveActions.execute({action:'live_restart',params:{}})});await page.waitForTimeout(250)}
+test('comando que falha nao vira duplicado',async({page})=>{await boot(page);await reset(page);const r=await page.evaluate(async()=>{const cmd={id:'retry-giant-1',action:'giant_fruit',params:{maxTier:2,duration:2}};const first=await FrutasLiveActions.execute(cmd);const g=FrutasGame,w=g.getFieldMetrics().width;g.dropFruit(0,w/2);await new Promise(r=>setTimeout(r,400));const second=await FrutasLiveActions.execute(cmd);return{first,second}});expect(r.first).toBeFalsy();expect(r.second).toBeTruthy()});
+test('escala temporaria nao fica permanente se efeito expirou durante reload',async({page})=>{await boot(page);await reset(page);await page.evaluate(()=>{const g=FrutasGame,w=g.getFieldMetrics().width;g.dropFruit(0,w/2)});await page.waitForTimeout(400);await page.evaluate(()=>FrutasLiveActions.execute({action:'mini_fruits',params:{percent:50,duration:1}}));await page.waitForTimeout(900);await page.evaluate(()=>FrutasGame.saveGame());await page.waitForTimeout(1300);await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.FrutasLiveActions&&window.FrutasGame);await page.waitForTimeout(250);const scale=await page.evaluate(()=>FrutasGame.getBodies()[0]?.__liveScale||0);expect(scale).toBeCloseTo(1,1)});
+test('fila persistida sobrevive ao reload sem duplicar id',async({page})=>{await boot(page);await reset(page);const key=await page.evaluate(()=>FRUTAS_CONFIG.liveQueueKey);await page.evaluate(k=>localStorage.setItem(k,JSON.stringify({schema:1,savedAt:Date.now(),items:[{queuedAt:Date.now(),data:{id:'persist-1',action:'remove_points',params:{amount:10}}}]})),key);await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.FrutasPanelBridge);const pending=await page.evaluate(()=>FrutasPanelBridge.getPendingCommands());expect(pending.filter(x=>x.id==='persist-1')).toHaveLength(1)});
+""")
+
+          # 5) package e README alinhados.
+          pkg=json.loads(Path('package.json').read_text())
+          pkg['version']='0.0.20'
+          pkg['scripts']['test:quick']='playwright test tests/quick.spec.js tests/resilience.spec.js'
+          Path('package.json').write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
+
+          Path('README.md').write_text("""# Frutas — Beta 0.0.20
+
+Jogo de combinação de bolas com integração LIVE+ para transmissões ao vivo. Duas bolas iguais se fundem no nível seguinte e somam pontos.
+
+## Arquitetura
+
+- `game.js` — core Matter.js, física, tiers, pontuação e persistência da partida.
+- `input.js` — toque, ponteiro, teclado e proteção contra gestos indesejados no canvas.
+- `live-actions.js` — seis interações públicas da live, HUD e efeitos temporários.
+- `panel-bridge.js` — conexão/reconexão LIVE+, regras, fila persistente e estado do HUD.
+- `action-manager.js` — idempotência, políticas de execução e proteção contra comandos duplicados.
+- `auto-player.js` — ferramenta administrativa isolada para testes automáticos.
+- `lifecycle.js` — reset, Game Over e verificações auxiliares de ciclo de vida.
+- `config.js` — configuração e chaves de storage.
+- `tests/` — QA funcional, visual, resiliência e teste longo.
+
+## Regras do jogo
+
+Existem 10 tiers internos, de 0 a 9. A progressão é roxa → vermelha → verde → amarela → laranja → vermelha II → rosa → verde II → verde III → dourada. A pontuação por formação é 2, 4, 8, 16, 30, 50, 80, 120 e 180 pontos. Duas douradas desaparecem e concedem bônus final de 500 pontos.
+
+## LIVE+
+
+A integração pública expõe somente: `live_restart`, `remove_points`, `giant_fruit`, `fruit_rain`, `second_chance` e `mini_fruits`. O jogador automático fica fora das ações de doação e aparece apenas como ferramenta administrativa.
+
+O HUD da Live pode ser ligado ou desligado na janela de conexão. A preferência fica salva no aparelho. Com o HUD escondido, o campo ocupa o espaço liberado.
+
+Comandos recebidos enquanto o jogo está protegido em segundo plano ficam numa fila persistente com expiração e limite de tamanho. IDs já concluídos também são guardados temporariamente para evitar execução duplicada. Comandos que falham por uma condição temporária não são marcados como concluídos.
+
+## Persistência e efeitos
+
+A partida salva pontuação, bolas, posições, velocidades, próxima bola, pausa e Game Over. Escalas temporárias de LIVE+ não são gravadas no core; mini e Capybara possuem persistência própria com `expiresAt`, evitando que uma escala temporária vire permanente depois de um reload tardio.
+
+## Mobile e desempenho
+
+A física usa timestep fixo de 60 Hz com limite de substeps. O DPR do canvas é limitado em telas móveis. Ao ir para segundo plano, a física e o cronômetro de perigo são protegidos; ao retornar, a partida aguarda brevemente antes de retomar.
+
+## QA
+
+`npm run test:quick` executa QA funcional e de resiliência. `npm run test:visual` valida os principais tamanhos mobile. `npm run test:long` executa uma partida automatizada prolongada. O workflow rápido roda em cada push/PR e o teste longo roda por agenda ou manualmente.
+
+## Publicação
+
+Projeto estático, sem build obrigatório. A raiz é publicada diretamente pelo GitHub Pages.
+""")
+
+          # 6) Versao visivel e cache busting.
+          p=Path('config.js'); s=p.read_text().replace("Beta 0.0.19","Beta 0.0.20").replace("assetVersion:'0.0.19'","assetVersion:'0.0.20'"); p.write_text(s)
+          p=Path('index.html'); s=p.read_text().replace('Beta 0.0.19','Beta 0.0.20').replace('?v=0.0.19','?v=0.0.20'); p.write_text(s)
+          Path('version.json').write_text('{"version":"Beta 0.0.20","gameId":"frutas","core":"consolidated"}\n')
+
+          # 7) Remover o workflow legado/one-shot ao finalizar.
+          Path('.github/workflows/core-cleanup-once.yml').unlink()
           PY
-      - name: Commit da limpeza
+      - name: Validar sintaxe basica
+        run: |
+          node --check game.js
+          node --check action-manager.js
+          node --check panel-bridge.js
+          node --check live-actions.js
+          node --check tests/resilience.spec.js
+          git diff --check
+      - name: Commit Beta 0.0.20
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add game.js
-          git diff --cached --check
-          git commit -m "Remove painel e input legados do game core"
+          git add -A
+          git commit -m "Harden LIVE persistence and release Beta 0.0.20"
           git push
