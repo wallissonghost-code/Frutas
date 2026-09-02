@@ -1,7 +1,7 @@
 {
   "name": "frutas-live-qa",
   "private": true,
-  "version": "0.0.20",
+  "version": "0.0.21",
   "scripts": {
     "serve": "http-server . -p 4173 -c-1",
     "test:quick": "playwright test tests/quick.spec.js tests/resilience.spec.js",
