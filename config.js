@@ -1,8 +1,8 @@
 (()=>{'use strict';
 window.FRUTAS_CONFIG=Object.freeze({
   gameId:'frutas',
-  version:'Beta 0.0.21',
-  assetVersion:'0.0.21',
+  version:'Beta 0.0.22',
+  assetVersion:'0.0.22',
   gameStorageKey:'frutas-game-state-v1',
   finalMergeBonus:500,
   removePointsDefault:100,
